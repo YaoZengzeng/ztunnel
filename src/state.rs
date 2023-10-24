@@ -69,6 +69,7 @@ impl fmt::Display for Upstream {
 }
 
 /// The current state information for this proxy.
+/// 对于这个proxy的当前的state信息
 #[derive(serde::Serialize, Default, Debug)]
 pub struct ProxyState {
     #[serde(flatten)]
@@ -85,6 +86,7 @@ pub struct ProxyState {
 }
 
 /// A ResolvedDnsStore encapsulates all resolved DNS information for workloads in the mesh
+/// 一个ResolvedDnsStore封装所有解析的DNS信息，对于mesh中的workloads
 #[derive(serde::Serialize, Default, Debug)]
 pub struct ResolvedDnsStore {
     // by_hostname is a map from hostname to resolved IP addresses for now.
@@ -148,18 +150,22 @@ impl ProxyState {
     pub fn find_upstream(&self, network: &str, addr: SocketAddr) -> Option<Upstream> {
         if let Some(svc) = self.services.get_by_vip(&network_addr(network, addr.ip())) {
             let Some(target_port) = svc.ports.get(&addr.port()) else {
-                debug!("found VIP {}, but port {} was unknown", addr.ip(), addr.port());
-                return None
+                debug!(
+                    "found VIP {}, but port {} was unknown",
+                    addr.ip(),
+                    addr.port()
+                );
+                return None;
             };
             // Randomly pick an upstream
             // TODO: do this more efficiently, and not just randomly
             let Some((_, ep)) = svc.endpoints.iter().choose(&mut rand::thread_rng()) else {
                 debug!("VIP {} has no healthy endpoints", addr);
-                return None
+                return None;
             };
             let Some(wl) = self.workloads.find_uid(&ep.workload_uid) else {
                 debug!("failed to fetch workload for {}", ep.workload_uid);
-                return None
+                return None;
             };
             // If endpoint overrides the target port, use that instead
             let target_port = ep.port.get(&addr.port()).unwrap_or(target_port);
@@ -189,12 +195,14 @@ impl ProxyState {
 
 /// Wrapper around [ProxyState] that provides additional methods for requesting information
 /// on-demand.
+/// [ProxyState]的Wrapper，提供额外的方法用于按需请求信息
 #[derive(serde::Serialize, Debug, Clone)]
 pub struct DemandProxyState {
     #[serde(flatten)]
     pub state: Arc<RwLock<ProxyState>>,
 
     /// If present, used to request on-demand updates for workloads.
+    /// 如果存在的话，用于按需请求workloads的更新
     #[serde(skip_serializing)]
     demand: Option<Demander>,
 
@@ -238,11 +246,13 @@ impl DemandProxyState {
         let state = self.state.read().unwrap();
 
         // We can get policies from namespace, global, and workload...
+        // 我们可以从namespace， global以及workload获取policies
         let ns = state.policies.get_by_namespace(&wl.namespace);
         let global = state.policies.get_by_namespace("");
         let workload = wl.authorization_policies.iter();
 
         // Aggregate all of them based on type
+        // 基于类型对它们进行聚合
         let (allow, deny): (Vec<_>, Vec<_>) = ns
             .iter()
             .chain(global.iter())
@@ -282,6 +292,7 @@ impl DemandProxyState {
             }
         }
         // "Deny the request."
+        // 不匹配任何的policy
         debug!("no allow policies matched");
         false
     }
@@ -450,10 +461,13 @@ impl DemandProxyState {
     }
 
     // only support workload
+    // 只支持workload
     pub async fn fetch_workload(&self, addr: &NetworkAddress) -> Option<Workload> {
         // Wait for it on-demand, *if* needed
+        // 按需等待，如果需要的话
         debug!(%addr, "fetch workload");
         if let Some(wl) = self.state.read().unwrap().workloads.find_address(addr) {
+            // 如果能从state里的workloads找到
             return Some(wl);
         }
         self.fetch_on_demand(addr.to_string()).await;
@@ -461,6 +475,7 @@ impl DemandProxyState {
     }
 
     // only support workload
+    // 只支持workload
     pub async fn fetch_workload_by_uid(&self, uid: &str) -> Option<Workload> {
         // Wait for it on-demand, *if* needed
         debug!(%uid, "fetch workload");
@@ -554,6 +569,7 @@ impl DemandProxyState {
     async fn fetch_on_demand(&self, key: String) {
         if let Some(demand) = &self.demand {
             debug!(%key, "sending demand request");
+            // 发送demand request
             demand.demand(key.clone()).await.recv().await;
             debug!(%key, "on demand ready");
         }
@@ -596,8 +612,11 @@ impl ProxyStateManager {
         awaiting_ready: readiness::BlockReady,
         cert_manager: Arc<SecretManager>,
     ) -> anyhow::Result<ProxyStateManager> {
+        // 构建cert fetcher
         let cert_fetcher = cert_fetcher::new(&config, cert_manager);
+        // 构建proxy state
         let state: Arc<RwLock<ProxyState>> = Arc::new(RwLock::new(ProxyState::default()));
+        // 构建xds client
         let xds_client = if config.xds_address.is_some() {
             let updater = ProxyStateUpdater::new(state.clone(), cert_fetcher.clone());
             Some(

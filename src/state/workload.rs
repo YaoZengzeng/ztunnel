@@ -168,6 +168,7 @@ fn is_default<T: Default + PartialEq>(t: &T) -> bool {
 impl Workload {
     pub fn identity(&self) -> Identity {
         Identity::Spiffe {
+            // 用trust domain, namespace, svc account构建Identity
             trust_domain: self.trust_domain.to_string(),
             namespace: self.namespace.clone(),
             service_account: self.service_account.clone(),
@@ -457,10 +458,16 @@ impl<'de> Deserialize<'de> for NetworkAddress {
                 E: serde::de::Error,
             {
                 let Some((network, address)) = value.split_once('/') else {
-                    return Err(serde::de::Error::invalid_value(serde::de::Unexpected::Str(value), &self));
+                    return Err(serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Str(value),
+                        &self,
+                    ));
                 };
                 let Ok(ip_addr) = IpAddr::from_str(address) else {
-                    return Err(serde::de::Error::invalid_value(serde::de::Unexpected::Str(value), &self));
+                    return Err(serde::de::Error::invalid_value(
+                        serde::de::Unexpected::Str(value),
+                        &self,
+                    ));
                 };
                 Ok(NetworkAddress {
                     network: network.to_string(),
@@ -486,6 +493,7 @@ pub fn network_addr(network: &str, vip: IpAddr) -> NetworkAddress {
 }
 
 /// A WorkloadStore encapsulates all information about workloads in the mesh
+/// 一个WorkloadStore封装所有的信息，关于mesh中的workloads信息
 #[derive(serde::Serialize, Default, Debug)]
 pub struct WorkloadStore {
     /// byAddress maps workload network addresses to workloads

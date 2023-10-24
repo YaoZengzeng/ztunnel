@@ -57,6 +57,7 @@ where
     F::Output: Send + 'static,
 {
     fn execute(&self, fut: F) {
+        // 用tokio生成一个future
         tokio::spawn(fut);
     }
 }
@@ -106,6 +107,7 @@ impl Pool {
     where
         F: Future<Output = Result<http2::SendRequest<Empty<Bytes>>, Error>>,
     {
+        // 重用连接
         let reuse_connection = self.pool.checkout(key.clone());
 
         let connect_pool = async {
@@ -113,7 +115,8 @@ impl Pool {
             let Some(connecting) = self.pool.connecting(&key, ver) else {
                 // There is already an existing connection establishment in flight.
                 // Return an error so
-                return Err(Error::PoolAlreadyConnecting)
+                // 已经有一个connection establishement在运行，返回一个error
+                return Err(Error::PoolAlreadyConnecting);
             };
             let pc = Client(connect.await?);
             let pooled = self.pool.pooled(connecting, pc);
@@ -167,24 +170,30 @@ mod test {
     #[tokio::test]
     async fn test_pool() {
         // We'll bind to 127.0.0.1:3000
+        // 我们绑定到127.0.0.1:3000
         let addr = SocketAddr::from(([127, 0, 0, 1], 0));
         async fn hello_world(req: Request<Incoming>) -> Result<Response<Empty<Bytes>>, Infallible> {
             info!("got req {req:?}");
+            // 构建response
             Ok(Response::builder().status(200).body(Empty::new()).unwrap())
         }
 
         // We create a TcpListener and bind it to 127.0.0.1:3000
+        // 我们创建一个TcpListener并且绑定到127.0.0.1:3000
         let listener = TcpListener::bind(addr).await.unwrap();
 
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
             // We start a loop to continuously accept incoming connections
+            // 我们启动一个loop，持续接收incoming连接
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
 
                 // Spawn a tokio task to serve multiple connections concurrently
+                // 生成一个tokio task来并行服务多个连接
                 tokio::task::spawn(async move {
                     // Finally, we bind the incoming connection to our `hello` service
+                    // 最后，我们绑定incoming connection到我们的`hello` service
                     if let Err(err) = crate::hyper_util::http2_server()
                         .serve_connection(stream, service_fn(hello_world))
                         .await
@@ -206,6 +215,7 @@ mod test {
             let tcp_stream = TcpStream::connect(addr).await?;
             let (request_sender, connection) = builder.handshake(tcp_stream).await?;
             // spawn a task to poll the connection and drive the HTTP state
+            // 生成一个task来轮询connection并且驱动HTTP state
             tokio::spawn(async move {
                 if let Err(e) = connection.await {
                     error!("Error in connection handshake: {:?}", e);
@@ -213,6 +223,7 @@ mod test {
             });
             Ok(request_sender)
         };
+        // 构建HTTP request
         let req = || {
             hyper::Request::builder()
                 .uri(format!("http://{addr}"))
@@ -221,6 +232,7 @@ mod test {
                 .body(Empty::<Bytes>::new())
                 .unwrap()
         };
+        // 调用pool的connect进行连接
         let mut c1 = pool.connect(key.clone(), connect()).await.unwrap();
         let mut c2 = pool
             .connect(key, async { unreachable!("should use pooled connection") })

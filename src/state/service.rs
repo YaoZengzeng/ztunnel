@@ -70,16 +70,21 @@ impl From<Service> for ServiceDescription {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Endpoint {
     /// The workload UID for this endpoint.
+    /// 这个endpoint的workload UID
     pub workload_uid: String,
 
     /// The service for this endpoint.
+    /// 这个endpoint对应的service
     pub service: NamespacedHostname,
 
     /// The workload address, if any.
+    /// workload address，如果有的话
     /// A workload with a hostname may have no addresses.
+    /// 有hostname的workload可能没有地址
     pub address: Option<NetworkAddress>,
 
     /// The port mapping.
+    /// 端口映射
     pub port: HashMap<u16, u16>,
 }
 
@@ -120,6 +125,7 @@ impl TryFrom<&XdsService> for Service {
 }
 
 /// Data store for service information.
+/// 对于service信息的Data store
 #[derive(serde::Serialize, Default, Debug)]
 pub struct ServiceStore {
     /// Maintains a mapping of service key -> (endpoint UID -> workload endpoint)

@@ -59,10 +59,12 @@ impl Socks5 {
         let accept = async move {
             loop {
                 // Asynchronously wait for an inbound socket.
+                // 异步地等待一个inbound socket
                 let socket = self.listener.accept().await;
                 match socket {
                     Ok((stream, remote)) => {
                         info!("accepted outbound connection from {}", remote);
+                        // 构建outbound connection，进行handle
                         let oc = OutboundConnection {
                             pi: self.pi.clone(),
                             id: TraceParent::new(),
@@ -93,6 +95,7 @@ impl Socks5 {
 }
 
 // hande will process a SOCKS5 connection. This supports a minimal subset of the protocol,
+// handle会处理一个SOCK5连接，它支持协议的一个minimal subset，足够集成一系列clients
 // sufficient to integrate with common clients:
 // - only unauthenticated requests
 // - only CONNECT, with IPv4 or IPv6

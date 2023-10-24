@@ -376,11 +376,13 @@ pub struct SecretManagerConfig {
 }
 
 /// SecretManager provides a wrapper around a CaClient with caching.
+/// SecretManager提供一个有缓存的CaClient的wrapper
 pub struct SecretManager {
     worker: Arc<Worker>,
     // Channel to which certificate requests are sent to. The Identity for which request is being
     // sent for must have a corresponding entry in the worker's certs map (which is where the
     // result can be read from).
+    // certificate 请求发送的channel，请求发送的Identity必须有一个对应的entry，在worker的certs map
     requests: mpsc::Sender<Request>,
 }
 
@@ -435,6 +437,7 @@ impl SecretManager {
         let mut certs = self.worker.certs.lock().await;
         match certs.get(id) {
             // Identity found in cache and is already being refreshed. Bump the priority if needed.
+            // 缓存中的Identity并且已经被refreshed，升级priority，如果需要的话
             Some(st) => {
                 let rx = st.rx.clone();
                 drop(certs);
@@ -447,11 +450,13 @@ impl SecretManager {
                 Ok(rx)
             }
             // New identity, start managing it and return the newly created channel.
+            // 新的identity，开始管理它并且返回新创建的channel
             None => {
                 let (tx, rx) = watch::channel(CertState::Initializing(pri));
                 certs.insert(id.to_owned(), CertChannel { rx: rx.clone(), tx });
                 drop(certs);
                 // Notify the background worker to start refreshing the certificate.
+                // 通知background worker来启动刷新cert
                 self.post(Request::Fetch(id.to_owned(), pri)).await;
                 Ok(rx)
             }

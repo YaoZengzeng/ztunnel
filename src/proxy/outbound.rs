@@ -74,6 +74,7 @@ impl Outbound {
         let accept = async move {
             loop {
                 // Asynchronously wait for an inbound socket.
+                // 异步地等待一个inbound socket
                 let socket = self.listener.accept().await;
                 let start_outbound_instant = Instant::now();
                 match socket {
@@ -105,6 +106,7 @@ impl Outbound {
         }.in_current_span();
 
         // Stop accepting once we drain.
+        // 一旦我们开始drain的时候，停止接收
         // Note: we are *not* waiting for all connections to be closed. In the future, we may consider
         // this, but will need some timeout period, as we have no back-pressure mechanism on connections.
         tokio::select! {
@@ -117,12 +119,14 @@ impl Outbound {
 }
 
 pub(super) struct OutboundConnection {
+    // 包含ProxyInputs
     pub(super) pi: ProxyInputs,
     pub(super) id: TraceParent,
 }
 
 impl OutboundConnection {
     async fn proxy(&mut self, stream: TcpStream) -> Result<(), Error> {
+        // 获取对端地址
         let peer = socket::to_canonical(stream.peer_addr().expect("must receive peer addr"));
         let orig_dst_addr = socket::orig_dst_addr_or_default(&stream);
         self.proxy_to(stream, peer.ip(), orig_dst_addr, false).await
@@ -224,10 +228,14 @@ impl OutboundConnection {
             .metrics
             .increment_defer::<_, metrics::ConnectionClose>(&connection_metrics);
         match req.protocol {
+            // 根据请求的协议，如果是HBONE
             Protocol::HBONE => {
                 info!(
                     "proxy to {} using HBONE via {} type {:#?}",
-                    req.destination, req.gateway, req.request_type
+                    // 使用HBONE，代理到req.destination
+                    req.destination,
+                    req.gateway,
+                    req.request_type
                 );
 
                 let mut allowed_sans: Vec<Identity> = Vec::new();
@@ -251,6 +259,7 @@ impl OutboundConnection {
 
                 // Setup our connection future. This won't always run if we have an existing connection
                 // in the pool.
+                // 设置我们的connection future，这不总是运行，如果我们在Pool中有一个已经存在的连接
                 let connect = async {
                     let mut builder =
                         hyper::client::conn::http2::Builder::new(hyper_util::TokioExecutor);
@@ -265,7 +274,9 @@ impl OutboundConnection {
                         .enable_original_source
                         .unwrap_or_default()
                         .then_some(remote_addr);
+                    // 获取请求的source的id
                     let id = &req.source.identity();
+                    // 获取证书
                     let cert = self.pi.cert_manager.fetch_certificate(id).await?;
                     let connector = cert
                         .connector(dst_identity)?
@@ -273,12 +284,14 @@ impl OutboundConnection {
                         .expect("configure");
                     let tcp_stream = super::freebind_connect(local, req.gateway).await?;
                     tcp_stream.set_nodelay(true)?; // TODO: this is backwards of expectations
+                                                   // 构建tls连接
                     let tls_stream = connect_tls(connector, tcp_stream).await?;
                     let (request_sender, connection) = builder
                         .handshake(tls_stream)
                         .await
                         .map_err(Error::HttpHandshake)?;
                     // spawn a task to poll the connection and drive the HTTP state
+                    // 生成一个task来轮询连接并且派生出HTTP state
                     tokio::spawn(async move {
                         if let Err(e) = connection.await {
                             error!("Error in HBONE connection handshake: {:?}", e);
@@ -286,6 +299,7 @@ impl OutboundConnection {
                     });
                     Ok(request_sender)
                 };
+                // 获取connections
                 let mut connection = self.pi.pool.connect(pool_key.clone(), connect).await?;
 
                 let mut f = http_types::proxies::Forwarded::new();
@@ -304,6 +318,7 @@ impl OutboundConnection {
                     .body(Empty::<Bytes>::new())
                     .unwrap();
 
+                // 在连接之上发送requests
                 let response = connection.send_request(request).await?;
 
                 let code = response.status();
@@ -321,12 +336,14 @@ impl OutboundConnection {
                 .instrument(trace_span!("hbone client"))
                 .await
             }
+            // 如果是TCP
             Protocol::TCP => {
                 info!(
                     "Proxying to {} using TCP via {} type {:?}",
                     req.destination, req.gateway, req.request_type
                 );
                 // Create a TCP connection to upstream
+                // 创建一个TCP连接到upstream
                 let local = if self.pi.cfg.enable_original_source.unwrap_or_default() {
                     super::get_original_src_from_stream(&stream)
                 } else {
@@ -334,6 +351,7 @@ impl OutboundConnection {
                 };
                 let mut outbound = super::freebind_connect(local, req.gateway).await?;
                 // Proxying data between downstrean and upstream
+                // 在downstream和upstream传递data
                 proxy::relay(
                     &mut stream,
                     &mut outbound,

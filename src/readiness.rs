@@ -20,6 +20,7 @@ mod server;
 pub use server::*;
 
 /// Ready tracks whether the process is ready.
+/// Ready追踪process是否ready
 #[derive(Clone, Debug, Default)]
 pub struct Ready(Arc<Mutex<HashSet<String>>>);
 
@@ -29,6 +30,7 @@ impl Ready {
     }
 
     /// register_task allows a caller to add a dependency to be marked "ready".
+    /// register_task允许调用者增加一个dependency来标记为"ready"
     pub fn register_task(&self, name: &str) -> BlockReady {
         self.0.lock().unwrap().insert(name.to_string());
         BlockReady {
@@ -43,6 +45,7 @@ impl Ready {
 }
 
 /// BlockReady blocks readiness until it is dropped.
+/// BlockReady阻塞readiness直到它被丢弃
 pub struct BlockReady {
     parent: Ready,
     name: String,

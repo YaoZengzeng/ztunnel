@@ -98,8 +98,10 @@ pub enum ProxyMode {
 #[derive(serde::Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct Config {
     /// If true, the HBONE proxy will be used.
+    /// 如果为true，则使用HBONE proxy
     pub proxy: bool,
     /// If true, a DNS proxy will be used.
+    /// 如果为true，则使用一个DNS proxy
     pub dns_proxy: bool,
 
     pub window_size: u32,
@@ -121,8 +123,10 @@ pub struct Config {
     /// The name of the node this ztunnel is running as.
     pub local_node: Option<String>,
     /// The proxy mode of ztunnel, Shared or Dedicated, default to Shared.
+    /// ztunnel的proxy模式，Shared或者Dedicated，默认是Shared
     pub proxy_mode: ProxyMode,
     /// The local_ip we are running at.
+    /// 我们正在运行的local ip
     pub local_ip: Option<IpAddr>,
     /// The Cluster ID of the cluster that his ztunnel belongs to
     pub cluster_id: String,
@@ -139,12 +143,15 @@ pub struct Config {
     /// Root cert for XDS TLS verification.
     pub xds_root_cert: RootCert,
     /// YAML config for local XDS workloads
+    /// 对于local XDS workloads的YAML配置
     #[serde(skip_serializing)]
     pub local_xds_config: Option<ConfigSource>,
     /// If true, on-demand XDS will be used
+    /// 如果为true，on-demand XDS会被使用
     pub xds_on_demand: bool,
 
     /// If true, then use builtin fake CA with self-signed certificates.
+    /// 如果为true，使用内置的fake CA，有着自签名的证书
     pub fake_ca: bool,
     #[serde(skip_serializing)]
     pub auth: identity::AuthSource,

@@ -16,12 +16,15 @@ use crate::rbac::{Authorization, RbacScope};
 use std::collections::{HashMap, HashSet};
 
 /// A PolicyStore encapsulates all policy information about workloads in the mesh
+/// 一个PolicyStore，封装所有的policy信息，关于mesh中的workloads
 #[derive(serde::Serialize, Default, Debug)]
 pub struct PolicyStore {
     /// policies maintains a mapping of ns/name to policy.
+    /// policies维护一个ns/name到policy的映射
     by_key: HashMap<String, Authorization>,
 
     /// policies_by_namespace maintains a mapping of namespace (or "" for global) to policy names
+    /// policies_by_namespace维护一个namespace（对于global为""）到policy names
     by_namespace: HashMap<String, HashSet<String>>,
 }
 

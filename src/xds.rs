@@ -55,14 +55,17 @@ pub enum Error {
 }
 
 /// Updates the [ProxyState] from XDS.
+/// 从XDS更新[ProxyState]
 #[derive(Clone)]
 pub struct ProxyStateUpdater {
     state: Arc<RwLock<ProxyState>>,
+    // 包含了cert fetcher
     cert_fetcher: Arc<dyn CertFetcher>,
 }
 
 impl ProxyStateUpdater {
     /// Creates a new updater for the given stores. Will prefetch certs when workloads are updated.
+    /// 创建一个新的updater，对于给定的stores，会预取certs，当workloads更新的时候
     pub fn new(state: Arc<RwLock<ProxyState>>, cert_fetcher: Arc<dyn CertFetcher>) -> Self {
         Self {
             state,
@@ -71,19 +74,23 @@ impl ProxyStateUpdater {
     }
 
     /// Creates a new updater that does not prefetch workload certs.
+    /// 创建一个新的updater，不预取workload certs
     pub fn new_no_fetch(state: Arc<RwLock<ProxyState>>) -> Self {
         Self::new(state, Arc::new(NoCertFetcher()))
     }
 
     pub fn insert_workload(&self, w: XdsWorkload) -> anyhow::Result<()> {
         // Convert the workload.
+        // 转换workload
         let workload = Workload::try_from(&w)?;
 
         // First, remove the entry entirely to make sure things are cleaned up properly.
+        // 首先，完整移除entry来确保都被清理干净了
         self.remove(&w.uid);
 
         // Unhealthy workloads are always inserted, as we may get or receive traffic to them.
         // But we shouldn't include them in load balancing we do to Services.
+        // Unhealthy workloads总是插入，因为我们可能获取或者接收来自他们的流量，但是我们不应把他们包含在lb中，对于services
         let mut endpoints = if workload.status == HealthStatus::Healthy {
             service_endpoints(&workload, &w.services)?
         } else {
@@ -91,9 +98,11 @@ impl ProxyStateUpdater {
         };
 
         // Prefetch the cert for the workload.
+        // 为workload预取cert
         self.cert_fetcher.prefetch_cert(&workload);
 
         // Lock and upstate the stores.
+        // 锁住并且更新stores
         let mut state = self.state.write().unwrap();
         state.workloads.insert(workload)?;
         while let Some(endpoint) = endpoints.pop() {
@@ -230,6 +239,7 @@ fn service_endpoints(
     let mut out = Vec::new();
     for (namespaced_host, ports) in services {
         // Parse the namespaced hostname for the service.
+        // 为service解析namespaced hostname
         let namespaced_host = match namespaced_host.split_once('/') {
             Some((namespace, hostname)) => NamespacedHostname {
                 namespace: namespace.to_string(),
@@ -243,6 +253,7 @@ fn service_endpoints(
         };
 
         // Create service endpoints for all the workload IPs.
+        // 创建service endpoints，对于所有workload IPs
         for wip in &workload.workload_ips {
             out.push(Endpoint {
                 workload_uid: workload.uid.clone(),
@@ -277,6 +288,7 @@ impl Handler<XdsAuthorization> for ProxyStateUpdater {
 }
 
 /// LocalClient serves as a local file reader alternative for XDS. This is intended for testing.
+/// LocalClient作为一个local file reader，替换XDS，这主要用于测试
 pub struct LocalClient {
     pub cfg: ConfigSource,
     pub state: Arc<RwLock<ProxyState>>,
@@ -306,17 +318,23 @@ impl LocalClient {
     #[instrument(skip_all, name = "local_client")]
     pub async fn run(self) -> Result<(), anyhow::Error> {
         // Currently, we just load the file once. In the future, we could dynamically reload.
+        // 当前，我们只加载一次文件，未来我们可以动态加载
         let data = self.cfg.read_to_string().await?;
         debug!("local config: {data}");
+        // 读取local config
         let r: LocalConfig = serde_yaml::from_str(&data)?;
         let mut state = self.state.write().unwrap();
         let num_workloads = r.workloads.len();
         let num_policies = r.policies.len();
+        // 遍历local workloads
         for wl in r.workloads {
             trace!("inserting local workload {}", &wl.workload.uid);
+            // 插入workloads
             state.workloads.insert(wl.workload.clone())?;
+            // 获取cert
             self.cert_fetcher.prefetch_cert(&wl.workload);
 
+            // 获取services
             let services: HashMap<String, PortList> = wl
                 .services
                 .into_iter()
@@ -334,6 +352,7 @@ impl LocalClient {
         for svc in r.services {
             state.services.insert(svc);
         }
+        // local config初始化完成
         info!(%num_workloads, %num_policies, "local config initialized");
         Ok(())
     }

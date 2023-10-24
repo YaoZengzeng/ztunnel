@@ -73,6 +73,7 @@ impl Proxy {
         drain: Watch,
     ) -> Result<Proxy, Error> {
         let metrics = Arc::new(metrics);
+        // 构建proxy input
         let mut pi = ProxyInputs {
             cfg: cfg.clone(),
             state,
@@ -82,11 +83,16 @@ impl Proxy {
             hbone_port: 0,
         };
         // We setup all the listeners first so we can capture any errors that should block startup
+        // 我们首先建立所有的listeners，这样我们可以抓住任何会阻碍block startup的错误
+        // 构建inbound
         let inbound = Inbound::new(pi.clone(), drain.clone()).await?;
         pi.hbone_port = inbound.address().port();
 
+        // 构建inbound passthrough
         let inbound_passthrough = InboundPassthrough::new(pi.clone()).await?;
+        // 构建outbound
         let outbound = Outbound::new(pi.clone(), drain.clone()).await?;
+        // 构建socks5
         let socks5 = Socks5::new(pi.clone(), drain).await?;
 
         Ok(Proxy {
@@ -212,6 +218,7 @@ pub async fn copy_hbone(
     let client_to_server = async {
         let mut ri = tokio::io::BufReader::with_capacity(HBONE_BUFFER_SIZE, &mut ri);
         let res = tokio::io::copy_buf(&mut ri, &mut wo).await;
+        // hbone到tcp
         trace!(?res, "hbone -> tcp");
         received = res?;
         wo.shutdown().await
@@ -220,6 +227,7 @@ pub async fn copy_hbone(
     let server_to_client = async {
         let mut ro = tokio::io::BufReader::with_capacity(HBONE_BUFFER_SIZE, &mut ro);
         let res = tokio::io::copy_buf(&mut ro, &mut wi).await;
+        // tcp到hbone
         trace!(?res, "tcp -> hbone");
         sent = res?;
         wi.shutdown().await
@@ -235,6 +243,7 @@ pub async fn copy_hbone(
 }
 
 /// Represents a traceparent, as defined by https://www.w3.org/TR/trace-context/
+/// 代表一个traceparent
 #[derive(Eq, PartialEq)]
 pub struct TraceParent {
     version: u8,
@@ -355,12 +364,14 @@ pub async fn freebind_connect(local: Option<IpAddr>, addr: SocketAddr) -> io::Re
     async fn connect(local: Option<IpAddr>, addr: SocketAddr) -> io::Result<TcpStream> {
         match local {
             None => {
+                // 没有local地址，直接连
                 trace!(dest=%addr, "no local address, connect directly");
                 Ok(TcpStream::connect(addr).await?)
             }
             // TODO: Need figure out how to handle case of loadbalancing to itself.
             //       We use ztunnel addr instead, otherwise app side will be confused.
             Some(src) if src == socket::to_canonical(addr).ip() => {
+                // src和dst相同，直接连接
                 trace!(%src, dest=%addr, "dest and source are the same, connect directly");
                 Ok(TcpStream::connect(addr).await?)
             }
@@ -381,17 +392,20 @@ pub async fn freebind_connect(local: Option<IpAddr>, addr: SocketAddr) -> io::Re
                     }
                 };
                 trace!(%src, dest=%addr, "connect with source IP");
+                // 构建一个TcpStream
                 Ok(socket.connect(addr).await?)
             }
         }
     }
     // Wrap the entire connect function in a timeout
+    // 将整个connect函数封装在一个timeout里
     timeout(CONNECTION_TIMEOUT, connect(local, addr))
         .await
         .map_err(|e| io::Error::new(io::ErrorKind::TimedOut, e))?
 }
 
 pub async fn relay(
+    // 参数中包含了downstream和upstream
     downstream: &mut tokio::net::TcpStream,
     upstream: &mut tokio::net::TcpStream,
     metrics: impl AsRef<Metrics>,

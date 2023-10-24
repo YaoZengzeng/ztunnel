@@ -170,9 +170,11 @@ impl Config {
 pub struct AdsClient {
     config: Config,
     /// Stores all known workload resources. Map from type_url to name
+    /// 存储所有已知的workload资源，从type_url映射到name
     known_resources: HashMap<String, HashSet<String>>,
 
     /// pending stores a list of all resources that are pending and XDS push
+    /// pending存储一系列的处于pending的资源
     pending: HashMap<ResourceKey, oneshot::Sender<()>>,
 
     demand: mpsc::Receiver<(oneshot::Sender<()>, ResourceKey)>,
@@ -185,14 +187,17 @@ pub struct AdsClient {
 }
 
 /// Demanded allows awaiting for an on-demand XDS resource
+/// Demanded允许等待一个按需的XDS resource
 pub struct Demanded {
     b: oneshot::Receiver<()>,
 }
 
 impl Demanded {
     /// recv awaits for the requested resource
+    /// recv等待请求的resource
     /// Note: the actual resource is not directly returned. Instead, callers are notified that the event
     /// has been handled through the configured resource handler.
+    /// 注意：真正的资源不是直接返回，而是callers被通知，事件已经被处理了，通过配置的resource handler
     pub async fn recv(self) {
         let _ = self.b.await;
     }
@@ -223,6 +228,7 @@ impl Display for XdsSignal {
 
 impl Demander {
     /// Demand requests a given workload by name
+    /// Demand通过name请求一个给定的workload
     pub async fn demand(&self, name: String) -> Demanded {
         let (tx, rx) = oneshot::channel::<()>();
         self.demand
@@ -467,7 +473,7 @@ impl AdsClient {
         send: &mpsc::Sender<DeltaDiscoveryRequest>,
     ) -> Result<XdsSignal, Error> {
         let Some(response) = stream_event else {
-            return Ok( XdsSignal::None);
+            return Ok(XdsSignal::None);
         };
         let type_url = response.type_url.clone();
         let nonce = response.nonce.clone();

@@ -75,6 +75,7 @@ pub fn orig_dst_addr_or_default(stream: &tokio::net::TcpStream) -> SocketAddr {
 fn orig_dst_addr(stream: &tokio::net::TcpStream) -> io::Result<SocketAddr> {
     let sock = SockRef::from(stream);
     // Dual-stack IPv4/IPv6 sockets require us to check both options.
+    // 双栈的IPv4/IPv6 sockets需要我们检查两个选项
     match linux::original_dst(&sock) {
         Ok(addr) => Ok(addr.as_socket().expect("failed to convert to SocketAddr")),
         Err(e4) => match linux::original_dst_ipv6(&sock) {
@@ -159,6 +160,7 @@ pub async fn relay(
 ) -> Result<(u64, u64), Error> {
     const EINVAL: i32 = 22;
 
+    // 直接在两个streams之间拷贝
     match realm_io::bidi_zero_copy(downstream, upstream).await {
         Ok(d) => Ok(d),
         Err(ref e) if e.raw_os_error().map_or(false, |ec| ec == EINVAL) => {

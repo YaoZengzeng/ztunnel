@@ -35,17 +35,22 @@ pub async fn build_with_cert(
     cert_manager: Arc<SecretManager>,
 ) -> anyhow::Result<Bound> {
     // Start the data plane worker pool.
+    // 启动data plane worker pool
     let data_plane_pool = new_data_plane_pool(config.num_worker_threads);
 
     let shutdown = signal::Shutdown::new();
     // Setup a drain channel. drain_tx is used to trigger a drain, which will complete
     // once all drain_rx handlers are dropped.
+    // 设置一个drain channel，drain_tx用于触发一个drain，它会完成，一旦所有的drain_handlers被丢弃
     // Any component which wants time to gracefully exit should take in a drain_rx clone,
     // await drain_rx.signaled(), then cleanup.
+    // 任何组件想要时间优雅退出，应该拿一个drain_rx clone，await drain_rx.signaled()，之后清理
     // Note: there is still a hard timeout if the draining takes too long
+    // 注意：依然有一个hard timeout，如果draining占用了太长时间
     let (drain_tx, drain_rx) = drain::channel();
 
     // Register readiness tasks.
+    // 注册readiness tasks
     let ready = readiness::Ready::new();
     let state_mgr_task = ready.register_task("state manager");
     let proxy_task = if config.proxy {
@@ -60,11 +65,13 @@ pub async fn build_with_cert(
     };
 
     // Create and start the readiness server.
+    // 创建并且启动readiness server
     let readiness_server = readiness::Server::new(config.clone(), drain_rx.clone(), ready.clone())
         .await
         .context("readiness server starts")?;
     let readiness_address = readiness_server.address();
     // Run the readiness server in the data plane worker pool.
+    // 在data plane worker pool运行readiness server
     data_plane_pool.send(DataPlaneTask {
         block_shutdown: false,
         fut: Box::pin(async move {
@@ -74,6 +81,7 @@ pub async fn build_with_cert(
     })?;
 
     // Register metrics.
+    // 注册metrics
     let mut registry = Registry::default();
     let istio_registry = metrics::sub_registry(&mut registry);
     let _ = metrics::meta::Metrics::new(istio_registry);
@@ -90,14 +98,17 @@ pub async fn build_with_cert(
     };
 
     // Create and start the metrics server.
+    // 创建并且启动metrics server
     let metrics_server = metrics::Server::new(config.clone(), drain_rx.clone(), registry)
         .await
         .context("stats server starts")?;
     let metrics_address = metrics_server.address();
     // Run the metrics sever in the current tokio worker pool.
+    // 在当前的tokio worker pool运行metrics server
     metrics_server.spawn();
 
     // Create the manager that updates proxy state from XDS.
+    // 创建manager，更新来自XDS的proxy state
     let state_mgr = ProxyStateManager::new(
         config.clone(),
         xds_metrics,
@@ -108,6 +119,7 @@ pub async fn build_with_cert(
     let state = state_mgr.state();
 
     // Create and start the admin server.
+    // 创建并且启动admin server
     let admin_server = admin::Service::new(
         config.clone(),
         state.clone(),
@@ -119,12 +131,15 @@ pub async fn build_with_cert(
     .context("admin server starts")?;
     let admin_address = admin_server.address();
     // Run the admin server in the current tokio worker pool.
+    // 在当前的tokio worker pool运行admin server
     admin_server.spawn();
 
     // Run the XDS state manager in the current tokio worker pool.
+    // 在当前的tokio worker pool运行XDS state manager
     tokio::spawn(state_mgr.run());
 
     // Optionally create the HBONE proxy.
+    // 可选地创建HBONE proxy
     let proxy_addresses = if config.proxy {
         let proxy = proxy::Proxy::new(
             config.clone(),
@@ -137,6 +152,7 @@ pub async fn build_with_cert(
         let addresses = proxy.addresses();
 
         // Run the HBONE proxy in the data plane worker pool.
+        // 在data plane worker pool运行HBONE proxy
         data_plane_pool.send(DataPlaneTask {
             block_shutdown: true,
             fut: Box::pin(async move {
@@ -152,6 +168,7 @@ pub async fn build_with_cert(
     };
 
     // Optionally create the DNS proxy.
+    // 可选地创建DNS proxy
     let dns_proxy_address = if config.dns_proxy {
         let dns_proxy = dns::Server::new(
             config.cluster_domain.clone(),
@@ -165,6 +182,7 @@ pub async fn build_with_cert(
         let address = dns_proxy.address();
 
         // Run the DNS proxy in the data plane worker pool.
+        // 在data plane worker pool运行DNS proxy
         data_plane_pool.send(DataPlaneTask {
             block_shutdown: true,
             fut: Box::pin(async move {
@@ -202,8 +220,10 @@ fn new_data_plane_pool(num_worker_threads: usize) -> mpsc::Sender<DataPlaneTask>
     thread::spawn(move || {
         let _span = span.enter();
         let runtime = tokio::runtime::Builder::new_multi_thread()
+            // 生成指定数目的worker threads
             .worker_threads(num_worker_threads)
             .thread_name_fn(|| {
+                // 设置thread的名字
                 static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
                 let id = ATOMIC_ID.fetch_add(1, Ordering::SeqCst);
                 format!("ztunnel-proxy-{id}")
@@ -216,13 +236,16 @@ fn new_data_plane_pool(num_worker_threads: usize) -> mpsc::Sender<DataPlaneTask>
                 let mut join_set = JoinSet::new();
 
                 // Spawn tasks as they're received, until all tasks are spawned.
+                // 生成tasks，一旦他们被接收，直到所有的tasks被生成
                 let task_iter: mpsc::Iter<DataPlaneTask> = rx.iter();
                 for task in task_iter {
                     if task.block_shutdown {
                         // We'll block shutdown on this task.
+                        // 我们会阻塞这个task的shutdown
                         join_set.spawn(task.fut);
                     } else {
                         // We won't block shutdown of this task. Just spawn and forget.
+                        // 我们不阻塞这个task的shutdown，只是生成并且王吉
                         tokio::spawn(task.fut);
                     }
                 }

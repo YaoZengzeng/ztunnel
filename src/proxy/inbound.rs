@@ -59,6 +59,7 @@ impl Inbound {
             .map_err(|e| Error::Bind(pi.cfg.inbound_addr, e))?;
         let transparent = super::maybe_set_transparent(&pi, &listener)?;
         // Override with our explicitly configured setting
+        // 用我们显式的配置覆盖
         pi.cfg.enable_original_source = Some(transparent);
         info!(
             address=%listener.local_addr().unwrap(),
@@ -115,6 +116,7 @@ impl Inbound {
                     .serve_connection(
                         socket,
                         service_fn(move |req| {
+                            // 服务连接
                             Self::serve_connect(
                                 state.clone(),
                                 conn.clone(),
@@ -125,6 +127,7 @@ impl Inbound {
                         }),
                     );
                 // Wait for drain to signal or connection serving to complete
+                // 等待对于signal进行drain或者connection服务结束
                 match futures_util::future::select(Box::pin(drain.signaled()), serve).await {
                     // We got a shutdown request. Start gracful shutdown and wait for the pending requests to complete.
                     futures_util::future::Either::Left((_shutdown, mut server)) => {
@@ -141,6 +144,7 @@ impl Inbound {
     }
 
     /// handle_inbound serves an inbound connection with a target address `addr`.
+    /// handle_inbound服务一个inbound connection，有着`addr`作为target地址
     pub(super) async fn handle_inbound(
         request_type: InboundConnect,
         orig_src: Option<IpAddr>,
@@ -172,6 +176,7 @@ impl Inbound {
                         let transferred_bytes =
                             metrics::BytesTransferred::from(&connection_metrics);
                         match request_type {
+                            // 对于请求的类型
                             DirectPath(mut incoming) => {
                                 match proxy::relay(
                                     &mut incoming,
@@ -210,6 +215,7 @@ impl Inbound {
                                 }
                                 Err(e) => {
                                     // Not sure if this can even happen
+                                    // 不确定这是否会发生
                                     error!(dur=?start.elapsed(), "No upgrade {e}");
                                 }
                             },
@@ -218,8 +224,10 @@ impl Inbound {
                     .in_current_span(),
                 );
                 // Send back our 200. We do this regardless of if our spawned task copies the data;
+                // 发回200，我们这么做不管我们spawned task是否拷贝数据
                 // we need to respond with headers immediately once connection is established for the
                 // stream of bytes to begin.
+                // 我们需要立刻回复headers，一旦连接建立，为了stream of bytes to begin
                 Ok(())
             }
         }
@@ -246,6 +254,7 @@ impl Inbound {
         metrics: Arc<Metrics>,
     ) -> Result<Response<Empty<Bytes>>, hyper::Error> {
         match req.method() {
+            // 根据请求的方法分别进行处理
             &Method::CONNECT => {
                 let uri = req.uri();
                 info!("got {} request to {}", req.method(), uri);
@@ -260,6 +269,7 @@ impl Inbound {
 
                 let addr: SocketAddr = addr.unwrap();
                 if addr.ip() != conn.dst.ip() {
+                    // 和目的地址匹配
                     info!("Sending 400, ip mismatch {addr} != {}", conn.dst);
                     return Ok(Response::builder()
                         .status(StatusCode::BAD_REQUEST)
@@ -273,22 +283,28 @@ impl Inbound {
                     address: addr.ip(),
                 };
                 let Some(upstream) = state.fetch_workload(&dst_network_addr).await else {
+                    // 获取workload
                     info!(%conn, "unknown destination");
                     return Ok(Response::builder()
                         .status(StatusCode::NOT_FOUND)
                         .body(Empty::new())
                         .unwrap());
                 };
+                // upstream是否包含waypoint
                 let has_waypoint = upstream.waypoint.is_some();
+                // 检查waypoint
                 let from_waypoint = Self::check_waypoint(state.clone(), &upstream, &conn).await;
+                // 检查gateway
                 let from_gateway = Self::check_gateway(state.clone(), &upstream, &conn).await;
 
                 if from_gateway {
                     debug!("request from gateway");
                 }
                 if from_waypoint {
+                    // 来自waypoint的请求，跳过policy
                     debug!("request from waypoint, skipping policy");
                 } else if !state.assert_rbac(&conn).await {
+                    // 执行RBAC策略
                     info!(%conn, "RBAC rejected");
                     return Ok(Response::builder()
                         .status(StatusCode::UNAUTHORIZED)
@@ -296,6 +312,7 @@ impl Inbound {
                         .unwrap());
                 }
                 if has_waypoint && !from_waypoint {
+                    // 跳过了waypoint
                     info!(%conn, "bypassed waypoint");
                     return Ok(Response::builder()
                         .status(StatusCode::UNAUTHORIZED)
@@ -316,6 +333,7 @@ impl Inbound {
                     parse_baggage_header(req.headers().get_all(BAGGAGE_HEADER)).unwrap_or_default();
 
                 let source = match from_gateway {
+                    // 来自gateway
                     true => None, // we cannot lookup source workload since we don't know the network, see https://github.com/istio/ztunnel/issues/515
                     false => {
                         let src_network_addr = NetworkAddress {
@@ -366,6 +384,7 @@ impl Inbound {
             }
             // Return the 404 Not Found for other routes.
             method => {
+                // 对于其他路由，返回404
                 info!("Sending 404, got {method}");
                 Ok(Response::builder()
                     .status(StatusCode::NOT_FOUND)
@@ -402,6 +421,7 @@ impl Inbound {
                 Some(address::Address::Service(svc)) => {
                     for (_ep_uid, ep) in svc.endpoints.iter() {
                         // fetch workloads by workload UID since we may not have an IP for an endpoint (e.g., endpoint is just a hostname)
+                        // 通过workload UID拉取workloads，因为对于一个endpoint可能没有IP(例如，endpoint只是一个hostname)
                         if state
                             .fetch_workload_by_uid(&ep.workload_uid)
                             .await
@@ -434,10 +454,13 @@ impl<'a, T: Display> Display for OptionDisplay<'a, T> {
 
 pub(super) enum InboundConnect {
     /// DirectPath is an optimization when we are connecting to an endpoint on the same node.
+    /// DirectPath是一个优化，当我们连接到同一个节点的endpoints
     /// Rather than doing a full HBONE connection over the localhost network, we just pass the outbound
     /// context directly to the inbound handling in memory.
+    /// 相对于在localhost network做一个完整的HBONE连接。我们只是直接传递outbound context到inbound，在内存处理
     DirectPath(TcpStream),
     /// Hbone is a standard HBONE request coming from the network.
+    /// Hbone是标准的来自网络的HBONE请求
     Hbone(Request<Incoming>),
 }
 
