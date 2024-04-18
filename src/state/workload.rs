@@ -503,13 +503,17 @@ pub fn network_addr(network: &str, vip: IpAddr) -> NetworkAddress {
 }
 
 /// A WorkloadStore encapsulates all information about workloads in the mesh
+/// 一个WorkloadStore封装了mesh中所有workloads的信息
 #[derive(serde::Serialize, Default, Debug)]
 pub struct WorkloadStore {
     /// byAddress maps workload network addresses to workloads
+    /// byAddress将workload的network address映射到workloads
     by_addr: HashMap<NetworkAddress, Arc<Workload>>,
     /// byUid maps workload UIDs to workloads
+    /// byUid将workload UIDs映射到workloads
     by_uid: HashMap<String, Arc<Workload>>,
     /// byHostname maps workload hostname to workloads.
+    /// byHostname将workload hostname映射到workloads
     by_hostname: HashMap<String, Arc<Workload>>,
 }
 

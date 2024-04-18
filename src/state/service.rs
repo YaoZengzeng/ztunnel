@@ -123,14 +123,17 @@ impl TryFrom<&XdsService> for Service {
 }
 
 /// Data store for service information.
+/// 对于service信息的data store
 #[derive(serde::Serialize, Default, Debug)]
 pub struct ServiceStore {
     /// Maintains a mapping of service key -> (endpoint UID -> workload endpoint)
     /// this is used to handle ordering issues if workloads are received before services.
+    /// 维护一个service key -> (endpoint UID -> workload endpoint)的映射，用来处理顺序问题，如果workloads在services之前收到
     staged_services: HashMap<NamespacedHostname, HashMap<String, Endpoint>>,
 
     /// Maintains a mapping of workload UID to service. This is used only to handle removal of
     /// service endpoints when a workload is removed.
+    /// 维护workload UID到service的映射，这主要用于在workload移除的时候，处理service endpoints的移除
     workload_to_services: HashMap<String, HashSet<NamespacedHostname>>,
 
     /// Allows for lookup of services by network address, the service's xds secondary key.

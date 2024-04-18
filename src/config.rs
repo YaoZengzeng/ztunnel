@@ -99,8 +99,10 @@ pub enum ProxyMode {
 #[derive(serde::Serialize, Clone, Debug, PartialEq, Eq)]
 pub struct Config {
     /// If true, the HBONE proxy will be used.
+    /// 如果为true，使用HBONE proxy
     pub proxy: bool,
     /// If true, a DNS proxy will be used.
+    /// 如果为true，使用DNS proxy
     pub dns_proxy: bool,
 
     pub window_size: u32,

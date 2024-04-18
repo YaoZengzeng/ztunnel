@@ -72,6 +72,7 @@ impl fmt::Display for Upstream {
 }
 
 /// The current state information for this proxy.
+/// 对于这个proxy，当前的state信息
 #[derive(serde::Serialize, Default, Debug)]
 pub struct ProxyState {
     #[serde(flatten)]
@@ -196,12 +197,14 @@ impl ProxyState {
 
 /// Wrapper around [ProxyState] that provides additional methods for requesting information
 /// on-demand.
+/// 对于[ProxyState]的Wrapper，提供额外的方法，用于按需请求信息
 #[derive(serde::Serialize, Debug, Clone)]
 pub struct DemandProxyState {
     #[serde(flatten)]
     pub state: Arc<RwLock<ProxyState>>,
 
     /// If present, used to request on-demand updates for workloads.
+    /// 如果存在，用于按需请求workerloads
     #[serde(skip_serializing)]
     demand: Option<Demander>,
 
@@ -294,6 +297,7 @@ impl DemandProxyState {
     }
 
     // this should only be called once per request (for the workload itself and potentially its waypoint)
+    // 对于每个请求，只能调用一次（对于workload自己以及潜在的waypoint）
     pub async fn load_balance(
         &self,
         dst_workload: &Workload,
@@ -509,9 +513,11 @@ impl DemandProxyState {
         workload_ip: IpAddr,
     ) -> Result<Option<Upstream>, WaypointError> {
         let Some(gw_address) = &wl.waypoint else {
+            // workload中如果没有指定waypoint
             return Ok(None);
         };
         // Even in this case, we are picking a single upstream pod and deciding if it has a remote proxy.
+        // 即使在这种情况，我们选择单个的upstream pod并且决定它是否有一个remote proxy
         // Typically this is all or nothing, but if not we should probably send to remote proxy if *any* upstream has one.
         let wp_nw_addr = match &gw_address.destination {
             Destination::Address(ip) => ip,
@@ -527,6 +533,7 @@ impl DemandProxyState {
             .await
         {
             Some(mut upstream) => {
+                // 找到waypoint upstream
                 debug!(%wl.name, "found waypoint upstream");
                 match set_gateway_address(&mut upstream, workload_ip, gw_address.hbone_mtls_port) {
                     Ok(_) => Ok(Some(upstream)),
@@ -554,13 +561,16 @@ impl DemandProxyState {
 
     /// Looks for the given address to find either a workload or service by IP. If not found
     /// locally, attempts to fetch on-demand.
+    /// 查找给定地址，寻找workload或者service，通过IP，如果没有找到，试着按需查找
     pub async fn fetch_address(&self, network_addr: &NetworkAddress) -> Option<Address> {
         // Wait for it on-demand, *if* needed
+        // 按需查找，如果需要的话
         debug!(%network_addr.address, "fetch address");
         if let Some(address) = self.state.read().unwrap().find_address(network_addr) {
             return Some(address);
         }
         // if both cache not found, start on demand fetch
+        // 如果缓存没有找到，按需查找
         self.fetch_on_demand(network_addr.to_string()).await;
         self.state.read().unwrap().find_address(network_addr)
     }

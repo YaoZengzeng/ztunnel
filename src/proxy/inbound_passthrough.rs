@@ -33,11 +33,13 @@ pub(super) struct InboundPassthrough {
 
 impl InboundPassthrough {
     pub(super) async fn new(mut pi: ProxyInputs) -> Result<InboundPassthrough, Error> {
+        // 监听inbound plaintext地址
         let listener: TcpListener = TcpListener::bind(pi.cfg.inbound_plaintext_addr)
             .await
             .map_err(|e| Error::Bind(pi.cfg.inbound_plaintext_addr, e))?;
         let transparent = super::maybe_set_transparent(&pi, &listener)?;
         // Override with our explicitly configured setting
+        // 用我们显式的配置覆盖
         pi.cfg.enable_original_source = Some(transparent);
 
         info!(
@@ -52,11 +54,13 @@ impl InboundPassthrough {
     pub(super) async fn run(self) {
         loop {
             // Asynchronously wait for an inbound socket.
+            // 异步等待一个inbound socket
             let socket = self.listener.accept().await;
             let pi = self.pi.clone();
             match socket {
                 Ok((stream, remote)) => {
                     tokio::spawn(async move {
+                        // 代理inbound plaintext
                         if let Err(e) = Self::proxy_inbound_plaintext(
                             pi, // pi cloned above; OK to move
                             socket::to_canonical(remote),

@@ -164,6 +164,7 @@ impl PartialOrd for PendingPriority {
 }
 
 // Implements the actual logic behind SecretManager.
+// 实现SecretManager背后真正的逻辑
 struct Worker {
     client: Box<dyn CaClientTrait>,
     // For now, certificates contain SystemTime so we need to convert it to Instant. Using Converter
@@ -376,11 +377,13 @@ pub struct SecretManagerConfig {
 }
 
 /// SecretManager provides a wrapper around a CaClient with caching.
+/// SecretManager提供一个CaClient的wrapper，同时有缓存
 pub struct SecretManager {
     worker: Arc<Worker>,
     // Channel to which certificate requests are sent to. The Identity for which request is being
     // sent for must have a corresponding entry in the worker's certs map (which is where the
     // result can be read from).
+    // 发送cert req的channel，发送的req的id必须在worker的certs map中有对应的entry（从中可以读取结果）
     requests: mpsc::Sender<Request>,
 }
 

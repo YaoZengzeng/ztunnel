@@ -98,6 +98,7 @@ impl Inbound {
             let drain = self.drain.clone();
             let network = self.cfg.network.clone();
             tokio::task::spawn(async move {
+                // 获取original dst
                 let dst = crate::socket::orig_dst_addr_or_default(socket.get_ref());
                 let conn = Connection {
                     src_identity: socket

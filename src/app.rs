@@ -35,6 +35,7 @@ pub async fn build_with_cert(
     cert_manager: Arc<SecretManager>,
 ) -> anyhow::Result<Bound> {
     // Start the data plane worker pool.
+    // 启动数据面的worker pool
     let data_plane_pool = new_data_plane_pool(config.num_worker_threads);
 
     let shutdown = signal::Shutdown::new();
@@ -60,6 +61,7 @@ pub async fn build_with_cert(
     };
 
     // Create and start the readiness server.
+    // 创建并且启动readiness server
     let readiness_server = readiness::Server::new(config.clone(), drain_rx.clone(), ready.clone())
         .await
         .context("readiness server starts")?;
@@ -90,6 +92,7 @@ pub async fn build_with_cert(
     };
 
     // Create and start the metrics server.
+    // 创建并且启动metrics server
     let metrics_server = metrics::Server::new(config.clone(), drain_rx.clone(), registry)
         .await
         .context("stats server starts")?;
@@ -98,6 +101,7 @@ pub async fn build_with_cert(
     metrics_server.spawn();
 
     // Create the manager that updates proxy state from XDS.
+    // 创建manager，用来自XDS的信息更新proxy state
     let state_mgr = ProxyStateManager::new(
         config.clone(),
         xds_metrics,
@@ -122,10 +126,13 @@ pub async fn build_with_cert(
     admin_server.spawn();
 
     // Run the XDS state manager in the current tokio worker pool.
+    // 运行XDS state manager，在当前的tokio worker pool
     tokio::spawn(state_mgr.run());
 
     // Optionally create the HBONE proxy.
+    // 可选地创建HBONE proxy
     let proxy_addresses = if config.proxy {
+        // 构建proxy
         let proxy = proxy::Proxy::new(
             config.clone(),
             state.clone(),
@@ -137,6 +144,7 @@ pub async fn build_with_cert(
         let addresses = proxy.addresses();
 
         // Run the HBONE proxy in the data plane worker pool.
+        // 运行HBONE proxy，在数据面的worker pool
         data_plane_pool.send(DataPlaneTask {
             block_shutdown: true,
             fut: Box::pin(async move {
@@ -152,6 +160,7 @@ pub async fn build_with_cert(
     };
 
     // Optionally create the DNS proxy.
+    // 可选地创建DNS proxy
     let dns_proxy_address = if config.dns_proxy {
         let dns_proxy = dns::Server::new(
             config.cluster_domain.clone(),
@@ -165,6 +174,7 @@ pub async fn build_with_cert(
         let address = dns_proxy.address();
 
         // Run the DNS proxy in the data plane worker pool.
+        // 在数据面的worker pool运行DNS proxy
         data_plane_pool.send(DataPlaneTask {
             block_shutdown: true,
             fut: Box::pin(async move {
@@ -249,6 +259,7 @@ pub async fn build(config: config::Config) -> anyhow::Result<Bound> {
     let cert_manager = if config.fake_ca {
         identity::mock::new_secret_manager(Duration::from_secs(86400))
     } else {
+        // 构建Secret Manager
         Arc::new(SecretManager::new(config.clone()).await?)
     };
     build_with_cert(config, cert_manager).await

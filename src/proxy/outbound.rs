@@ -74,6 +74,7 @@ impl Outbound {
         let accept = async move {
             loop {
                 // Asynchronously wait for an inbound socket.
+                // 异步等待一个inbound socket
                 let socket = self.listener.accept().await;
                 let start_outbound_instant = Instant::now();
                 match socket {
@@ -125,6 +126,7 @@ impl OutboundConnection {
     async fn proxy(&mut self, stream: TcpStream) -> Result<(), Error> {
         let peer = socket::to_canonical(stream.peer_addr().expect("must receive peer addr"));
         let orig_dst_addr = socket::orig_dst_addr_or_default(&stream);
+        // 代理到orig dst addr
         self.proxy_to(stream, peer.ip(), orig_dst_addr, false).await
     }
 
@@ -140,6 +142,7 @@ impl OutboundConnection {
         {
             return Err(Error::SelfCall);
         }
+        // 构建请求
         let req = self.build_request(remote_addr, orig_dst_addr).await?;
         debug!(
             "request from {} to {} via {} type {:#?} dir {:#?}",
@@ -148,6 +151,7 @@ impl OutboundConnection {
         if block_passthrough && req.destination_workload.is_none() {
             // This is mostly used by socks5. For typical outbound calls, we need to allow calls to arbitrary
             // domains. But for socks5
+            // 这主要用于socks5，对于一般的outbound calls，我们需要允许对于任何domains的调用
             return Err(Error::UnknownDestination(req.destination.ip()));
         }
         let can_fastpath = self.pi.cfg.proxy_mode == ProxyMode::Shared
@@ -172,7 +176,9 @@ impl OutboundConnection {
 
         if req.request_type == RequestType::DirectLocal && can_fastpath {
             // For same node, we just access it directly rather than making a full network connection.
+            // 对于同一个节点，我们可以直接访问而不是构建一个完整的network connection
             // Pass our `stream` over to the inbound handler, which will process as usual
+            // 将我们的`stream`传递给inbound handler，可以正常处理
             // We *could* apply this to all traffic, rather than just for destinations that are "captured"
             // However, we would then get inconsistent behavior where only node-local pods have RBAC enforced.
             info!("proxying to {} using node local fast path", req.destination);
@@ -204,6 +210,7 @@ impl OutboundConnection {
                 },
                 destination_service: req.destination_service,
             };
+            // 放入handle_inbound
             return Inbound::handle_inbound(
                 InboundConnect::DirectPath(stream),
                 origin_src,
@@ -226,6 +233,7 @@ impl OutboundConnection {
         match req.protocol {
             Protocol::HBONE => {
                 info!(
+                    // 使用HBONE代理
                     "proxy to {} using HBONE via {} type {:#?}",
                     req.destination, req.gateway, req.request_type
                 );
@@ -243,6 +251,7 @@ impl OutboundConnection {
                 allowed_sans.push(req.expected_identity.clone().unwrap());
                 let dst_identity = allowed_sans;
 
+                // 构建pool key
                 let pool_key = pool::Key {
                     src_id: req.source.identity(),
                     dst_id: dst_identity.clone(),
@@ -251,6 +260,7 @@ impl OutboundConnection {
 
                 // Setup our connection future. This won't always run if we have an existing connection
                 // in the pool.
+                // 设置我们的connection future，这不会总是运行，如果我们在pool中有一个已经存在的连接
                 let connect = async {
                     let mut builder =
                         hyper::client::conn::http2::Builder::new(hyper_util::TokioExecutor);
@@ -266,6 +276,7 @@ impl OutboundConnection {
                         .unwrap_or_default()
                         .then_some(remote_addr);
                     let id = &req.source.identity();
+                    // 根据id从cert manager中获取cert
                     let cert = self.pi.cert_manager.fetch_certificate(id).await?;
                     let connector = cert
                         .connector(dst_identity)?
@@ -279,6 +290,7 @@ impl OutboundConnection {
                         .await
                         .map_err(Error::HttpHandshake)?;
                     // spawn a task to poll the connection and drive the HTTP state
+                    // 生成一个task来轮训连接并且驱动HTTP state
                     tokio::spawn(async move {
                         if let Err(e) = connection.await {
                             error!("Error in HBONE connection handshake: {:?}", e);
@@ -297,6 +309,7 @@ impl OutboundConnection {
                     .version(hyper::Version::HTTP_2)
                     .header(
                         BAGGAGE_HEADER,
+                        // 在header中加入baggae
                         baggage(&req, self.pi.cfg.cluster_id.clone()),
                     )
                     .header(FORWARDED, f.value().unwrap())
@@ -304,6 +317,7 @@ impl OutboundConnection {
                     .body(Empty::<Bytes>::new())
                     .unwrap();
 
+                // 发送请求
                 let response = connection.send_request(request).await?;
 
                 let code = response.status();
@@ -327,6 +341,7 @@ impl OutboundConnection {
                     req.destination, req.gateway, req.request_type
                 );
                 // Create a TCP connection to upstream
+                // 创建一个TCP连接到upstream
                 let local = if self.pi.cfg.enable_original_source.unwrap_or_default() {
                     super::get_original_src_from_stream(&stream)
                 } else {
@@ -334,6 +349,7 @@ impl OutboundConnection {
                 };
                 let mut outbound = super::freebind_connect(local, req.gateway).await?;
                 // Proxying data between downstrean and upstream
+                // 在downsteam和upstream之间代理数据
                 proxy::relay(
                     &mut stream,
                     &mut outbound,
@@ -364,10 +380,12 @@ impl OutboundConnection {
         let us = self
             .pi
             .state
+            // 获取upstream
             .fetch_upstream(&source_workload.network, target)
             .await;
         if us.is_none() {
             // For case no upstream found, passthrough it
+            // 如果没有找到upstream，直接passsthrough
             return Ok(Request {
                 protocol: Protocol::TCP,
                 source: source_workload,
@@ -394,6 +412,7 @@ impl OutboundConnection {
             .await?;
 
         // For case upstream server has enabled waypoint
+        // 如果使能了waypoint
         match self
             .pi
             .state
@@ -415,6 +434,7 @@ impl OutboundConnection {
                 let wp_socket_addr = SocketAddr::new(waypoint_ip, waypoint_us.port);
                 return Ok(Request {
                     // Always use HBONE here
+                    // 总是使用HBONE
                     protocol: Protocol::HBONE,
                     source: source_workload,
                     // Use the original VIP, not translated
@@ -424,15 +444,18 @@ impl OutboundConnection {
                     expected_identity: Some(waypoint_workload.identity()),
                     gateway: wp_socket_addr,
                     // Let the client remote know we are on the inbound path.
+                    // 让client remote只掉，我们在inbound path
                     direction: Direction::Inbound,
                     request_type: RequestType::ToServerWaypoint,
                     upstream_sans: mutable_us.sans,
                 });
             }
             // we expected the workload to have a waypoint, but could not find one
+            // 我们期望workload有一个waypoint，但是不能找到
             Err(e) => return Err(Error::UnknownWaypoint(e.to_string())),
         }
 
+        // 设置gateway地址
         let us = match set_gateway_address(&mut mutable_us, workload_ip, self.pi.hbone_port) {
             Ok(_) => mutable_us,
             Err(e) => {
@@ -446,6 +469,7 @@ impl OutboundConnection {
         }
 
         // For case source client and upstream server are on the same node
+        // 万一source client和upstream server在同一个node
         if !us.workload.node.is_empty()
             && self.pi.cfg.local_node.as_ref() == Some(&us.workload.node) // looks weird but in Rust borrows can be compared and will behave the same as owned (https://doc.rust-lang.org/std/primitive.reference.html)
             && us.workload.protocol == Protocol::HBONE
@@ -478,6 +502,7 @@ impl OutboundConnection {
             });
         }
         // For case no waypoint for both side and direct to remote node proxy
+        // 如果两边都没有waypoint，直接到远端的node proxy
         Ok(Request {
             protocol: us.workload.protocol,
             source: source_workload,
@@ -497,6 +522,7 @@ impl OutboundConnection {
 }
 
 fn baggage(r: &Request, cluster: String) -> String {
+    // 设置cluster name，ns name, workload name以及service版本
     format!("k8s.cluster.name={cluster},k8s.namespace.name={namespace},k8s.{workload_type}.name={workload_name},service.name={name},service.version={version}",
             namespace = r.source.namespace,
             workload_type = r.source.workload_type,
@@ -514,6 +540,7 @@ struct Request {
     destination: SocketAddr,
     // The intended destination workload. This is always the original intended target, even in the case
     // of other proxies along the path.
+    // 预期的目的workload，这总是原始的intended target，即使在路径上又很多proxies
     destination_workload: Option<Workload>,
     destination_service: Option<ServiceDescription>,
     // The identity we will assert for the next hop; this may not be the same as destination_workload
@@ -534,6 +561,7 @@ enum Direction {
 #[derive(PartialEq, Debug)]
 enum RequestType {
     /// ToServerWaypoint refers to requests targeting a server waypoint proxy
+    /// ToServerWaypoint引用请求，指向目标为一个server waypoint proxy
     ToServerWaypoint,
     /// Direct requests are made directly to a intended backend pod
     Direct,
@@ -577,6 +605,7 @@ mod tests {
             local_node: Some("local-node".to_string()),
             ..crate::config::parse_config().unwrap()
         };
+        // 构建xds workload
         let source = XdsWorkload {
             uid: "cluster1//v1/Pod/ns/source-workload".to_string(),
             name: "source-workload".to_string(),

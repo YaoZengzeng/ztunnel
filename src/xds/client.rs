@@ -295,6 +295,7 @@ impl Demanded {
 }
 
 /// Demander allows requesting XDS resources on-demand
+/// Demander允许按需请求XDS资源
 #[derive(Debug, Clone)]
 pub struct Demander {
     demand: mpsc::Sender<(oneshot::Sender<()>, ResourceKey)>,

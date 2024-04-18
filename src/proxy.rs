@@ -85,10 +85,13 @@ impl Proxy {
             hbone_port: 0,
         };
         // We setup all the listeners first so we can capture any errors that should block startup
+        // 我们设置所有的listeners，这样我们可以获取任何会阻塞启动的errors
         let inbound = Inbound::new(pi.clone(), drain.clone()).await?;
         pi.hbone_port = inbound.address().port();
 
+        // 构建inbound passthrough
         let inbound_passthrough = InboundPassthrough::new(pi.clone()).await?;
+        // 构建outbound
         let outbound = Outbound::new(pi.clone(), drain.clone()).await?;
         let socks5 = Socks5::new(pi.clone(), drain).await?;
 
@@ -102,6 +105,7 @@ impl Proxy {
 
     pub async fn run(self) {
         let tasks = vec![
+            // 运行各个proxy
             tokio::spawn(self.inbound_passthrough.run().in_current_span()),
             tokio::spawn(self.inbound.run().in_current_span()),
             tokio::spawn(self.outbound.run().in_current_span()),
